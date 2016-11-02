@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">wear</string>
     <string name="message">Watch face tapped</string>
-    <string name="my_digital_name">My Digital</string>
+    <string name="my_digital_name">Sunshine Weather</string>
+    <string name="empty_weather">-</string>
+
 </resources>

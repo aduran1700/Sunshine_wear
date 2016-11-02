@@ -30,6 +30,7 @@ import android.support.v4.app.NotificationCompat;
 import android.support.v4.app.TaskStackBuilder;
 import android.text.format.Time;
 import android.util.Log;
+import android.widget.Toast;
 
 import com.bumptech.glide.Glide;
 import com.example.android.sunshine.app.BuildConfig;
@@ -69,6 +70,10 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
     // 60 seconds (1 minute) * 180 = 3 hours
     public static final int SYNC_INTERVAL = 60 * 180;
     public static final int SYNC_FLEXTIME = SYNC_INTERVAL/3;
+    public static final String WEATHER_PATH = "/weather-data";
+    public static final String WEATHER_ID = "weather_id";
+    public static final String WEATHER_HIGH = "weather_high";
+    public static final String WEATHER_LOW = "weather_low";
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
     private GoogleApiClient mGoogleApiClient;
@@ -369,8 +374,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
                 cVVector.add(weatherValues);
-
-                sendWeatherData(weatherId, high, low);
             }
 
             int inserted = 0;
@@ -387,6 +390,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
 
                 updateWidgets();
                 updateMuzei();
+                sendWeatherData();
                 notifyWeather();
             }
             Log.d(LOG_TAG, "Sync Complete. " + cVVector.size() + " Inserted");
@@ -693,22 +697,39 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements 
 
     }
 
-    public void sendWeatherData(int weatherId, double weatherHigh, double weatherLow) {
-        PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/weather-data");
+    public void sendWeatherData() {
 
-        putDataMapRequest.getDataMap().putInt("weather-id", weatherId);
-        putDataMapRequest.getDataMap().putDouble("weather-high", weatherHigh);
-        putDataMapRequest.getDataMap().putDouble("weather-low", weatherLow);
+        String locationQuery = Utility.getPreferredLocation(getContext());
+        Uri weatherUri = WeatherContract.WeatherEntry.buildWeatherLocationWithDate(locationQuery, System.currentTimeMillis());
+        Cursor cursor = getContext().getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
 
-        PutDataRequest request = putDataMapRequest.asPutDataRequest();
+        if (cursor.moveToFirst()) {
+            double weatherHigh = cursor.getDouble(INDEX_MAX_TEMP);
+            double weatherLow = cursor.getDouble(INDEX_MIN_TEMP);
+            int weatherId = cursor.getInt(INDEX_WEATHER_ID);
+            PutDataMapRequest putDataMapRequest = PutDataMapRequest.create(SunshineSyncAdapter.WEATHER_PATH).setUrgent();
 
-        Wearable.DataApi.putDataItem(mGoogleApiClient, request)
-                .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
-                    @Override
-                    public void onResult(@NonNull DataApi.DataItemResult dataItemResult) {
+            putDataMapRequest.getDataMap().putInt(SunshineSyncAdapter.WEATHER_ID, weatherId);
+            putDataMapRequest.getDataMap().putString(SunshineSyncAdapter.WEATHER_HIGH, Utility.formatTemperature(getContext(), weatherHigh));
+            putDataMapRequest.getDataMap().putString(SunshineSyncAdapter.WEATHER_LOW, Utility.formatTemperature(getContext(), weatherLow));
 
-                    }
-                });
+            PutDataRequest request = putDataMapRequest.asPutDataRequest();
+
+            Wearable.DataApi.putDataItem(mGoogleApiClient, request)
+                    .setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+                        @Override
+                        public void onResult(@NonNull DataApi.DataItemResult dataItemResult) {
+                        if (dataItemResult.getStatus().isSuccess()) {
+                            Log.d(LOG_TAG, "Data item set: " + dataItemResult.getDataItem().getUri());
+                        } else {
+                            // There was an error sending the data
+                            Log.e(LOG_TAG, "data not sent to android wear");
+                        }
+                        }
+                    });
+        }
+
+        cursor.close();
 
     }
 }
